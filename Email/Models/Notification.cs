@@ -11,6 +11,7 @@ namespace TaskManagement.Models
         public int AccountId { get; set; }          // who receives it
         public int? ProjectId { get; set; }
         public int? TaskId { get; set; }
+        public TaskItem? TaskEntity { get; set; }
         public string Message { get; set; }
         public bool IsRead { get; set; } = false;
         public DateTime CreatedAt { get; set; }

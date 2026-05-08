@@ -16,6 +16,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Hangfire;
 using Hangfire.SqlServer;
 using TaskManagement.Jobs;
+using TaskManagement.Auth;
+using TaskManagement.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -102,6 +104,8 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<IEmailService, EmailService>(); // EMAILS
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<IProjectAuthService, ProjectAuthService>();
+builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -149,8 +153,8 @@ app.UseSwaggerUI(c =>
 app.UseStaticFiles();
 app.UseResponseCompression();
 app.UseHttpsRedirection();
-app.UseMiddleware<ApiKeyMiddleware>();
-app.UseMiddleware<ApiTokenMiddleware>();
+app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<TokenAuthMiddleware>();
 app.UseHangfireDashboard("/hangfire");
 
 RecurringJob.AddOrUpdate<DueTaskWarningJob>(

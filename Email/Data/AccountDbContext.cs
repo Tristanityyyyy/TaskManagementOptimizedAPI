@@ -122,6 +122,12 @@ namespace TaskManagement.Data
                 .HasForeignKey(nameof(Project.ScrumMasterId))
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<Notification>()
+                .HasOne(n => n.TaskEntity)
+                .WithMany()
+                .HasForeignKey(n => n.TaskId)
+                .OnDelete(DeleteBehavior.NoAction);
+
             // TaskItem - TaskStatus 
             modelBuilder.Entity<TaskItem>()
                 .HasOne(t => t.Status)
