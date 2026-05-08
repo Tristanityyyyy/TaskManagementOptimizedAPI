@@ -32,14 +32,9 @@ public sealed class TokenAuthMiddleware
             return;
         }
 
-        if (path.StartsWithSegments("/api/Auth/ForgotPassword") ||
-            path.StartsWithSegments("/api/Auth/VerifyOtp") ||
-            path.StartsWithSegments("/api/Auth/ResetPassword"))
-        {
-            await _next(context);
-            return;
-        }
-
+        // API key required for ALL non-swagger endpoints. (Previously the legacy forgot/verify/reset
+        // routes bypassed even the API key, which let the public hammer them — closed by enforcing
+        // X-Api-Key here. Laravel already sends the key on every call, so this is a no-op for the UI.)
         var config = context.RequestServices.GetRequiredService<IConfiguration>();
         if (!TryGetApiKey(context, out var providedKey) ||
             !string.Equals(providedKey, config["ApiKey"], StringComparison.Ordinal))
@@ -48,10 +43,8 @@ public sealed class TokenAuthMiddleware
             return;
         }
 
-        if (path.StartsWithSegments("/api/Auth/login") ||
-            path.StartsWithSegments("/api/Auth/ForgotPassword") ||
-            path.StartsWithSegments("/api/Auth/VerifyOtp") ||
-            path.StartsWithSegments("/api/Auth/ResetPassword"))
+        // Endpoints that don't require a Bearer token (login + the public OTP/reset flow).
+        if (IsPublicAuthEndpoint(path))
         {
             await _next(context);
             return;
@@ -96,6 +89,12 @@ public sealed class TokenAuthMiddleware
 
         await _next(context);
     }
+
+    private static bool IsPublicAuthEndpoint(PathString path) =>
+        path.StartsWithSegments("/api/v1/auth/login") ||
+        path.StartsWithSegments("/api/v1/auth/forgot-password") ||
+        path.StartsWithSegments("/api/v1/auth/verify-otp") ||
+        path.StartsWithSegments("/api/v1/auth/reset-password");
 
     private static bool TryGetApiKey(HttpContext context, out string key)
     {

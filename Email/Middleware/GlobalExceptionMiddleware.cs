@@ -36,6 +36,10 @@ public sealed class GlobalExceptionMiddleware
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = nfe.Message }));
                     return;
+                case UnauthorizedException uex:
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = uex.Message }));
+                    return;
                 case ForbiddenException fbe:
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = fbe.Message }));
