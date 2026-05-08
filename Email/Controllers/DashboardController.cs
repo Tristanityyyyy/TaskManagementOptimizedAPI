@@ -157,7 +157,7 @@ namespace TaskManagement.Controllers
                         StatusId = t.StatusId,
                         StatusName = t.Status.Name,
                         PriorityId = t.PriorityId,
-                        PriorityName = t.Priority != null ? t.Priority.Name : string.Empty,
+                        PriorityName = t.Priority.Name,
                         StoryPoints = t.StoryPoints,
                         StartDate = t.StartDate,
                         DueDate = t.DueDate,

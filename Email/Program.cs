@@ -1,11 +1,14 @@
 ﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.OpenApi.Models;
 using System.Linq;
+using TaskManagement;
 using TaskManagement.Data;
+using TaskManagement.Models;
 using TaskManagement.Services;
 using Hangfire;
 using Hangfire.SqlServer;
