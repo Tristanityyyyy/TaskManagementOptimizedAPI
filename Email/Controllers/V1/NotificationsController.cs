@@ -16,7 +16,7 @@ public sealed class NotificationsController : ApiControllerBase
         _notifications = notifications;
     }
 
-    [HttpGet(Name = nameof(List))]
+    [HttpGet]
     [ProducesResponseType(typeof(PagedResult<NotificationResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<PagedResult<NotificationResponse>>> List(
