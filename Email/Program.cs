@@ -1,22 +1,13 @@
-﻿using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.ResponseCompression;
+﻿using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using System.Text;
-using System.Linq;
-using TaskManagement;
-using TaskManagement.Data;
-using TaskManagement.Models;
-using TaskManagement.Services;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using Hangfire;
-using Hangfire.SqlServer;
-using TaskManagement.Jobs;
 using TaskManagement.Auth;
+using TaskManagement.Data;
+using TaskManagement.Services;
+using Hangfire;
+using TaskManagement.Jobs;
 using TaskManagement.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -95,10 +86,6 @@ builder.Services.AddDbContextPool<AccountDbContext>(options =>
     )
     .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
-// Authentication
-var jwtSettings = builder.Configuration.GetSection("Jwt");
-var key = Encoding.ASCII.GetBytes(jwtSettings["Key"]);
-
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 
@@ -108,6 +95,7 @@ builder.Services.AddScoped<IProjectAuthService, ProjectAuthService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<INotificationsService, NotificationsService>();
+builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -159,11 +147,22 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<TokenAuthMiddleware>();
 app.UseHangfireDashboard("/hangfire");
 
-RecurringJob.AddOrUpdate<DueTaskWarningJob>(
-    "due-task-warning",
-    job => job.RunAsync(),
-    "0 * * * *"  // every hour
-);
+// Hangfire job registration is best-effort: if Hangfire's SQL schema isn't ready
+// (or the DB is briefly unreachable on startup), we don't want the whole app to fail.
+try
+{
+    RecurringJob.AddOrUpdate<DueTaskWarningJob>(
+        "due-task-warning",
+        job => job.RunAsync(),
+        "0 * * * *"  // every hour
+    );
+}
+catch (Exception ex)
+{
+    var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+    startupLogger.LogError(ex, "Failed to register recurring job 'due-task-warning'. Continuing startup.");
+}
+
 app.MapControllers();
 
 app.Run();

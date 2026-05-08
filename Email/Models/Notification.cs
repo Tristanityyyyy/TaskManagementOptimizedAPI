@@ -10,6 +10,7 @@ namespace TaskManagement.Models
         public int Id { get; set; }
         public int AccountId { get; set; }          // who receives it
         public int? ProjectId { get; set; }
+        public Project? Project { get; set; }
         public int? TaskId { get; set; }
         public TaskItem? TaskEntity { get; set; }
         public string Message { get; set; }
