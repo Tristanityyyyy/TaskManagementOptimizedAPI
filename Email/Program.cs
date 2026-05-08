@@ -107,6 +107,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<IProjectAuthService, ProjectAuthService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ICommentService, CommentService>();
+builder.Services.AddScoped<INotificationsService, NotificationsService>();
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
