@@ -779,6 +779,136 @@ public sealed class TaskService : ITaskService
         };
     }
 
+    public async Task<IReadOnlyList<ProjectTaskStatItem>> GetProjectStatsBatchAsync(int requesterId,
+        IReadOnlyList<int> projectIds, CancellationToken cancellationToken = default)
+    {
+        var distinct = projectIds.Where(id => id > 0).Distinct().ToList();
+        var results = new List<ProjectTaskStatItem>(distinct.Count);
+
+        foreach (var projectId in distinct)
+        {
+            var visibility = await _projectAuth.GetTaskVisibilityAsync(requesterId, projectId, cancellationToken);
+            if (visibility == TaskVisibility.None)
+            {
+                results.Add(new ProjectTaskStatItem(projectId, 0, 0));
+                continue;
+            }
+
+            IQueryable<TaskItem> query = _context.Tasks
+                .AsNoTracking()
+                .Where(t => t.ProjectId == projectId && !t.IsDeleted);
+
+            if (visibility == TaskVisibility.OnlyAssigned)
+                query = query.Where(t =>
+                    t.Assignments.Any(a => a.AccountId == requesterId && !a.IsDeleted));
+
+            var total = await query.CountAsync(cancellationToken);
+            var completed = await query.CountAsync(t => t.StatusId == 4, cancellationToken);
+
+            results.Add(new ProjectTaskStatItem(projectId, total, completed));
+        }
+
+        return results;
+    }
+
+    public async Task<CheckAssigneeWorkloadResult> CheckAssigneeWorkloadAsync(DateTime startDate, int storyPoints,
+        IReadOnlyList<int> assigneeIds, CancellationToken cancellationToken = default)
+    {
+        if (!ValidFibonacciStoryPoints.Contains(storyPoints))
+            throw new ValidationException(nameof(storyPoints),
+                "Story points must be a Fibonacci number (1, 2, 3, 5, 8, 13, 21).");
+
+        if (startDate == default)
+            throw new ValidationException(nameof(startDate), "Start date is required.");
+
+        var projectedDueDate = BusinessDayHelper.CalculateDueDateFromStoryPoints(startDate, storyPoints);
+        var newTaskHours = BusinessDayHelper.GetHoursForStoryPoints(storyPoints);
+
+        var assigneeIdSet = assigneeIds.Where(id => id > 0).Distinct().ToList();
+
+        if (assigneeIdSet.Count == 0)
+            return new CheckAssigneeWorkloadResult(
+                startDate.ToString("yyyy-MM-dd HH:mm"),
+                projectedDueDate.ToString("yyyy-MM-dd HH:mm"),
+                storyPoints,
+                Array.Empty<AssigneeWorkloadWarningDto>());
+
+        var accountNames = await _context.Accounts
+            .AsNoTracking()
+            .Where(a => assigneeIdSet.Contains(a.Id))
+            .Select(a => new { a.Id, a.Name })
+            .ToDictionaryAsync(a => a.Id, a => a.Name, cancellationToken);
+
+        var overlappingRows = await _context.TaskAssignments
+            .AsNoTracking()
+            .Where(a =>
+                assigneeIdSet.Contains(a.AccountId) &&
+                !a.IsDeleted &&
+                !a.Task.IsDeleted &&
+                a.Task.StoryPoints != null &&
+                a.Task.StartDate.HasValue &&
+                a.Task.DueDate.HasValue &&
+                a.Task.StartDate.Value.Date <= projectedDueDate.Date &&
+                a.Task.DueDate.Value.Date >= startDate.Date)
+            .Select(a => new { a.AccountId, StoryPoints = a.Task.StoryPoints!.Value })
+            .ToListAsync(cancellationToken);
+
+        var existingHoursByAccount = overlappingRows
+            .GroupBy(x => x.AccountId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Sum(x => BusinessDayHelper.GetHoursForStoryPoints(x.StoryPoints)));
+
+        var warnings = new List<AssigneeWorkloadWarningDto>();
+
+        foreach (var accountId in assigneeIdSet)
+        {
+            var existingHours = existingHoursByAccount.TryGetValue(accountId, out var val) ? val : 0;
+            var totalHours = existingHours + newTaskHours;
+            if (totalHours <= 8)
+                continue;
+
+            accountNames.TryGetValue(accountId, out var accountName);
+            warnings.Add(new AssigneeWorkloadWarningDto(
+                accountId,
+                accountName,
+                existingHours,
+                newTaskHours,
+                totalHours,
+                8,
+                totalHours - 8,
+                startDate.ToString("yyyy-MM-dd HH:mm"),
+                projectedDueDate.ToString("yyyy-MM-dd HH:mm"),
+                $"{accountName} is overloaded by {totalHours - 8}h " +
+                $"({totalHours}h total / 8h daily capacity) " +
+                $"during {startDate:yyyy-MM-dd} to {projectedDueDate:yyyy-MM-dd}."));
+        }
+
+        return new CheckAssigneeWorkloadResult(
+            startDate.ToString("yyyy-MM-dd HH:mm"),
+            projectedDueDate.ToString("yyyy-MM-dd HH:mm"),
+            storyPoints,
+            warnings);
+    }
+
+    public async Task<IReadOnlyList<TaskCatalogItem>> GetStatusesCatalogAsync(
+        CancellationToken cancellationToken = default)
+        => await _context.TaskStatuses
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Id)
+            .Select(t => new TaskCatalogItem(t.Id, t.Name, t.Description, t.IsActive, t.CreatedAt))
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<TaskCatalogItem>> GetPrioritiesCatalogAsync(
+        CancellationToken cancellationToken = default)
+        => await _context.TaskPriorities
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Id)
+            .Select(t => new TaskCatalogItem(t.Id, t.Name, t.Description, t.IsActive, t.CreatedAt))
+            .ToListAsync(cancellationToken);
+
     private async Task<List<int>> CollectSubtreeIdsAsync(int rootId, bool includeDeleted,
         CancellationToken cancellationToken)
     {

@@ -16,6 +16,45 @@ public sealed class TasksController : ApiControllerBase
         _tasks = tasks;
     }
 
+    [HttpGet("catalog/statuses")]
+    [ProducesResponseType(typeof(IReadOnlyList<TaskCatalogItem>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<TaskCatalogItem>>> CatalogStatuses(
+        CancellationToken cancellationToken = default)
+        => Ok(await _tasks.GetStatusesCatalogAsync(cancellationToken));
+
+    [HttpGet("catalog/priorities")]
+    [ProducesResponseType(typeof(IReadOnlyList<TaskCatalogItem>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<TaskCatalogItem>>> CatalogPriorities(
+        CancellationToken cancellationToken = default)
+        => Ok(await _tasks.GetPrioritiesCatalogAsync(cancellationToken));
+
+    [HttpPost("stats/batch")]
+    [ProducesResponseType(typeof(ProjectStatsBatchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ProjectStatsBatchResponse>> StatsBatch(
+        [FromBody] ProjectStatsBatchRequest? dto,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = dto?.ProjectIds ?? new List<int>();
+        var items = await _tasks.GetProjectStatsBatchAsync(CurrentAccount.Id, ids, cancellationToken);
+
+        return Ok(new ProjectStatsBatchResponse(items));
+    }
+
+    [HttpGet("check-workload")]
+    [ProducesResponseType(typeof(CheckAssigneeWorkloadResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<CheckAssigneeWorkloadResult>> CheckWorkload(
+        [FromQuery] DateTime startDate,
+        [FromQuery] int storyPoints,
+        [FromQuery] List<int>? assigneeIds,
+        CancellationToken cancellationToken = default)
+        => Ok(await _tasks.CheckAssigneeWorkloadAsync(startDate, storyPoints, assigneeIds ?? [],
+            cancellationToken));
+
     [HttpGet(Name = nameof(List))]
     [ProducesResponseType(typeof(PagedResult<TaskListItemResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

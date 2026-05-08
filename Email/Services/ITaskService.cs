@@ -31,4 +31,14 @@ public interface ITaskService
 
     Task<AssignTaskResponse> AssignAsync(int requesterId, int taskId, AssignTaskRequest dto,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ProjectTaskStatItem>> GetProjectStatsBatchAsync(int requesterId,
+        IReadOnlyList<int> projectIds, CancellationToken cancellationToken = default);
+
+    Task<CheckAssigneeWorkloadResult> CheckAssigneeWorkloadAsync(DateTime startDate, int storyPoints,
+        IReadOnlyList<int> assigneeIds, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TaskCatalogItem>> GetStatusesCatalogAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TaskCatalogItem>> GetPrioritiesCatalogAsync(CancellationToken cancellationToken = default);
 }
