@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.ResponseCompression;
+﻿using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -22,13 +23,89 @@ builder.Services.AddResponseCompression(options =>
         "application/json"
     });
 });
+// ----------------------------------------------------------------------
+// Rate limiting
+// ----------------------------------------------------------------------
+// Two layers:
+//   1. A GLOBAL limiter applied to every request, partitioned by the resolved account id
+//      (set by TokenAuthMiddleware) → API key prefix → client IP. Skips /swagger and /hangfire.
+//   2. An "auth-strict" policy attached via [EnableRateLimiting] on the abuse-prone
+//      auth endpoints (login, forgot-password, verify-otp, reset-password). Per-IP, low limit,
+//      defends against brute-force / OTP guessing / enumeration retries.
+//
+// Both limits compose: an auth call must pass BOTH the global and the strict policy.
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("fixed", opt =>
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
     {
-        opt.PermitLimit = 100;
-        opt.Window = TimeSpan.FromMinutes(1);
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            var seconds = (int)Math.Ceiling(retryAfter.TotalSeconds);
+            context.HttpContext.Response.Headers.RetryAfter = seconds.ToString();
+        }
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync(
+            "{\"error\":\"Too many requests, please try again later.\"}",
+            cancellationToken);
+    };
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var path = httpContext.Request.Path;
+
+        // Don't throttle Swagger UI or the Hangfire dashboard — admins need free access.
+        if (path.StartsWithSegments("/swagger") || path.StartsWithSegments("/hangfire"))
+            return RateLimitPartition.GetNoLimiter("nolimit");
+
+        var partitionKey = ResolvePartitionKey(httpContext);
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 300,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true,
+        });
     });
+
+    options.AddPolicy("auth-strict", httpContext =>
+    {
+        // Per-client-IP. 10 attempts per 5 minutes is enough for legitimate users
+        // (forgot-password retry, OTP entry mistakes) while pinching brute force.
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter("auth-strict:" + ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(5),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true,
+        });
+    });
+
+    static string ResolvePartitionKey(HttpContext context)
+    {
+        // 1. Authenticated request — partition per account so a single user can't drown
+        //    everyone behind a NAT.
+        if (context.Items.TryGetValue(TokenAuthMiddleware.AccountHttpContextKey, out var accountObj)
+            && accountObj is ResolvedAccount account)
+        {
+            return "acct:" + account.Id;
+        }
+
+        // 2. Anonymous but API-key-bearing request (e.g. login). Partition by a hash-ish prefix
+        //    of the key so we don't log the full secret.
+        if (context.Request.Headers.TryGetValue("X-Api-Key", out var apiKey) && !string.IsNullOrWhiteSpace(apiKey))
+        {
+            var prefix = apiKey.ToString();
+            return "key:" + (prefix.Length > 8 ? prefix[..8] : prefix);
+        }
+
+        // 3. Last resort: client IP. (Includes anything that slipped past TokenAuthMiddleware,
+        //    which currently is just the public-auth endpoints — they also have auth-strict.)
+        return "ip:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+    }
 });
 
 // Swagger configuration
@@ -100,6 +177,7 @@ builder.Services.AddScoped<IAccountsService, AccountsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IStickyNotesService, StickyNotesService>();
+builder.Services.AddScoped<IAuditLogsService, AuditLogsService>();
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -149,6 +227,10 @@ app.UseResponseCompression();
 app.UseHttpsRedirection();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<TokenAuthMiddleware>();
+// Place the limiter AFTER TokenAuthMiddleware so the global limiter can partition by
+// the resolved account id, and BEFORE MapControllers so [EnableRateLimiting("auth-strict")]
+// metadata is observed by the endpoint pipeline.
+app.UseRateLimiter();
 app.UseHangfireDashboard("/hangfire");
 
 // Hangfire job registration is best-effort: if Hangfire's SQL schema isn't ready

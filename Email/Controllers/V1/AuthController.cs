@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TaskManagement.DTOs.Auth;
 using TaskManagement.Services;
 
@@ -16,8 +17,10 @@ public sealed class AuthController : ApiControllerBase
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(typeof(LoginResponseV1), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<LoginResponseV1>> Login(
         [FromBody] LoginRequestV1 dto,
         CancellationToken cancellationToken = default)
@@ -39,8 +42,10 @@ public sealed class AuthController : ApiControllerBase
     }
 
     [HttpPost("forgot-password")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ForgotPassword(
         [FromBody] ForgotPasswordRequestV1 dto,
         CancellationToken cancellationToken = default)
@@ -50,8 +55,10 @@ public sealed class AuthController : ApiControllerBase
     }
 
     [HttpPost("verify-otp")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> VerifyOtp(
         [FromBody] VerifyOtpRequestV1 dto,
         CancellationToken cancellationToken = default)
@@ -61,9 +68,11 @@ public sealed class AuthController : ApiControllerBase
     }
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting("auth-strict")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ResetPassword(
         [FromBody] ResetPasswordRequestV1 dto,
         CancellationToken cancellationToken = default)
