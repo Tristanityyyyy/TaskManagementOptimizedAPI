@@ -11,6 +11,5 @@
         public bool IsDeleted { get; set; } = false;
         public DateTime? DeletedAt { get; set; }
         public Account Account { get; set; }
-        public Project? Project { get; set; }
     }
 }
