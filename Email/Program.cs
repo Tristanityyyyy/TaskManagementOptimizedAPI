@@ -4,12 +4,15 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text;
 using System.Linq;
 using TaskManagement;
 using TaskManagement.Data;
 using TaskManagement.Models;
 using TaskManagement.Services;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Hangfire;
 using Hangfire.SqlServer;
 using TaskManagement.Jobs;
@@ -92,8 +95,10 @@ builder.Services.AddDbContextPool<AccountDbContext>(options =>
     )
     .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
-// Authentication (JWT wiring lives elsewhere; do not read Jwt:Key here — a missing key caused
-// Encoding.ASCII.GetBytes(null) and immediate process exit on IIS when appsettings.json was absent.)
+// Authentication
+var jwtSettings = builder.Configuration.GetSection("Jwt");
+var key = Encoding.ASCII.GetBytes(jwtSettings["Key"]);
+
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 
@@ -154,19 +159,11 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<TokenAuthMiddleware>();
 app.UseHangfireDashboard("/hangfire");
 
-try
-{
-    RecurringJob.AddOrUpdate<DueTaskWarningJob>(
-        "due-task-warning",
-        job => job.RunAsync(),
-        "0 * * * *"); // every hour
-}
-catch (Exception ex)
-{
-    // Hangfire needs SQL Server + schema; a bad connection string or blocked DB should not take down the whole API.
-    app.Logger.LogError(ex, "Hangfire recurring job registration failed.");
-}
-
+RecurringJob.AddOrUpdate<DueTaskWarningJob>(
+    "due-task-warning",
+    job => job.RunAsync(),
+    "0 * * * *"  // every hour
+);
 app.MapControllers();
 
 app.Run();
