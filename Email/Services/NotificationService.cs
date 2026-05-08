@@ -16,7 +16,7 @@ namespace TaskManagement.Services
             _context = context;
         }
 
-        public async Task NotifyAsync(int accountId, string message, int? projectId = null, int? taskId = null)
+        public Task NotifyAsync(int accountId, string message, int? projectId = null, int? taskId = null)
         {
             _context.Notifications.Add(new Notification
             {
@@ -27,6 +27,8 @@ namespace TaskManagement.Services
                 IsRead = false,
                 CreatedAt = PhTime
             });
+
+            return Task.CompletedTask;
         }
     }
 }
