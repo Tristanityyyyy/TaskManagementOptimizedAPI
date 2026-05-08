@@ -60,4 +60,35 @@ public sealed class ProjectAuthService : IProjectAuthService
 
         return TaskVisibility.OnlyAssigned;
     }
+
+    public async Task<ProjectMembership> GetMembershipAsync(int accountId, int projectId,
+        CancellationToken cancellationToken = default)
+    {
+        var account = await _context.Accounts
+            .AsNoTracking()
+            .Where(a => a.Id == accountId)
+            .Select(a => new { a.Id, a.Role })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var isAdmin = account != null && account.Role == AppRoles.Admin;
+
+        var memberRole = await _context.ProjectMembers
+            .AsNoTracking()
+            .Where(m => m.ProjectId == projectId && m.AccountId == accountId && !m.IsDeleted)
+            .Select(m => m.Role)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var isPm = memberRole == AppRoles.ProjectManager || memberRole == AppRoles.PmScrumMaster;
+        var isSm = memberRole == AppRoles.ScrumMaster || memberRole == AppRoles.PmScrumMaster;
+        var isMember = memberRole != null;
+
+        return new ProjectMembership(
+            accountId,
+            projectId,
+            isAdmin,
+            isPm,
+            isSm,
+            isMember,
+            memberRole);
+    }
 }
